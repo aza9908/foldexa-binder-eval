@@ -174,7 +174,7 @@ def _reference_row(path, chain1: str, chain2: str) -> dict:
     "structure,confidence,binder,target,cutoff,reference", UPSTREAM_CASES
 )
 def test_matches_upstream_reference(
-    structure, confidence, binder, target, cutoff, reference
+    structure, confidence, binder, target, cutoff, reference, tmp_path
 ):
     structure_path = IPSAE_EXAMPLE / structure
     confidence_path = IPSAE_EXAMPLE / confidence
@@ -185,8 +185,13 @@ def test_matches_upstream_reference(
         import gzip
         import shutil
 
-        with gzip.open(gz, "rb") as src, confidence_path.open("wb") as dst:
+        # Decompress into tmp_path, never back into the submodule: writing
+        # there leaves a third-party checkout dirty and makes the parent
+        # repository report an unexpected submodule change.
+        extracted = tmp_path / confidence_path.name
+        with gzip.open(gz, "rb") as src, extracted.open("wb") as dst:
             shutil.copyfileobj(src, dst)
+        confidence_path = extracted
 
     cx = Complex.from_file(structure_path, binder_chain=binder, target_chains=target)
     conf = load_confidence(confidence_path).align_to(cx)
