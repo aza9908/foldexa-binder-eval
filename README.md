@@ -198,16 +198,41 @@ Boltz `.npz`. Two details that are easy to get wrong and are handled here:
 The native ipSAE implementation is checked against the score files
 Dunbrack's `ipsae.py` produced for its own example models, in both AF2
 (three chains, PDB, 15 Å cutoff) and AF3 (mmCIF with ATP/Mg/TPO, 10 Å cutoff)
-form. Every structural quantity — `n0chn`, `n0dom`, `n0res`, `d0res`, and the
-set of residue pairs clearing the cutoff — matches exactly; the AF2 scores
-match to all six printed decimals and the AF3 scores to 3×10⁻⁵.
+form. Every structural quantity — `n0chn`, `n0dom`, `n0res`, `d0res`, the
+token selected per residue, and the set of residue pairs clearing the cutoff
+— matches exactly, and the scores agree to 10⁻⁶, which is the precision the
+reference files print to.
 
 ```bash
-pytest                 # 112 tests
+pytest                 # 143 tests
 pytest -k upstream     # just the reference regression
+pytest tests/test_regressions.py
 ```
 
-The reference tests skip if the ipSAE submodule has not been cloned.
+The reference tests skip if the ipSAE submodule has not been cloned, and CI
+fails rather than passes if that happens.
+
+`tests/test_regressions.py` pins a set of defects that were caught by
+comparing against upstream and reviewing against the reference sources —
+each one returned a plausible number rather than failing:
+
+- a residue key without the chain id, which collided across a multi-chain
+  target (every Fab has H and L both starting at residue 1) and reported a
+  refold RMSD of 8 Å where the true value was 1 Å;
+- confidence-file pairing that ignored the sample index, so in a normal AF3
+  output directory `model_1` was scored with `model_0`'s PAE matrix;
+- token alignment that dropped insertion codes, mapping 100, 100A and 100B
+  onto a single PAE row, and that picked a modified residue's first atom
+  rather than its CA;
+- hydrogen bonds double-counted for hydroxyl pairs, where both atoms are
+  donor and acceptor;
+- a one-sided PAE triangle left half the matrix at 0.0 Å, i.e. maximal
+  confidence, instead of mirroring or erroring;
+- a constant B-factor column of 1.00 rescaled to a perfect pLDDT of 100.
+
+That list is in the README rather than a changelog because each of them is a
+thing this kind of tool gets wrong quietly, and knowing they were present is
+useful when judging how much to trust the rest.
 
 ## Limitations
 
@@ -223,7 +248,12 @@ Worth knowing before trusting a number:
   proxy it is left out. BindCraft remains the tool for that number.
 - **Hydrogen bonds are heavy-atom geometry.** Predictor output carries no
   hydrogens, so donor–acceptor distance is the criterion and angular terms
-  are not evaluated. Counts run slightly high against hydrogen-aware methods.
+  are not evaluated. Counts run high against hydrogen-aware methods, which
+  reject many distance-acceptable pairs on geometry.
+- **The calibration set is 18 crystal interfaces, positives only.** No decoy
+  set, antibody-heavy, and evolved rather than designed. It establishes the
+  scale of the native metrics, not the false-positive rate of a threshold.
+  Recalibrate against your own outcomes if you have them.
 - **Refold RMSD needs a refold.** Without one that metric reports as missing,
   and under the default `missing_policy: fail` a candidate cannot pass on
   incomplete evidence. The `screen` profile sets `skip` instead.

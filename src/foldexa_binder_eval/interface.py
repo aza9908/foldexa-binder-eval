@@ -207,16 +207,24 @@ def _count_interface_hbonds(
     donors_b, acceptors_b = _polar_atom_indices(atoms, near_b)
     donors_t, acceptors_t = _polar_atom_indices(atoms, near_t)
 
-    count = 0
+    # Count distinct atom pairs, not donor->acceptor assignments. Hydroxyls
+    # and histidine nitrogens (SER OG, THR OG1, TYR OH, HIS ND1/NE2, CYS SG)
+    # are both donor and acceptor, so one SER-OG...THR-OG1 bond is found once
+    # in each sweep direction and would otherwise be counted twice.
+    found: set[tuple[int, int]] = set()
     for donors, acceptors in ((donors_b, acceptors_t), (donors_t, acceptors_b)):
         if donors.size == 0 or acceptors.size == 0:
             continue
         pairs = cKDTree(coord[donors]).sparse_distance_matrix(
             cKDTree(coord[acceptors]), HBOND_MAX_DISTANCE, output_type="ndarray"
         )
-        if pairs.size:
-            count += int((pairs["v"] >= HBOND_MIN_DISTANCE).sum())
-    return count
+        if not pairs.size:
+            continue
+        keep = pairs["v"] >= HBOND_MIN_DISTANCE
+        for di, ai in zip(pairs["i"][keep], pairs["j"][keep], strict=True):
+            lo, hi = int(donors[di]), int(acceptors[ai])
+            found.add((lo, hi) if lo < hi else (hi, lo))
+    return len(found)
 
 
 def _polar_atom_indices(
@@ -584,15 +592,39 @@ def _backbone_subset(cx: Complex, chains) -> struc.AtomArray:
     return atoms[mask]
 
 
-def _match_by_residue(a: struc.AtomArray, b: struc.AtomArray) -> tuple[struc.AtomArray, struc.AtomArray]:
-    """Keep only (res_id, atom_name) pairs present in both arrays, in order."""
-    key_a = {
-        (int(r), str(n)): i
-        for i, (r, n) in enumerate(zip(a.res_id, a.atom_name, strict=True))
-    }
-    idx_a, idx_b = [], []
-    for j, (r, n) in enumerate(zip(b.res_id, b.atom_name, strict=True)):
-        i = key_a.get((int(r), str(n)))
+def _atom_keys(atoms: struc.AtomArray) -> list[tuple[str, int, str, str]]:
+    """``(chain, res_id, ins_code, atom_name)`` per atom.
+
+    The chain id and insertion code are part of the key, not decoration.
+    A multi-chain target restarts residue numbering per chain -- every Fab
+    has an H and an L chain both beginning at 1 -- so a key of
+    ``(res_id, atom_name)`` collides across chains and silently matches the
+    wrong atoms. Antibody numbering (100, 100A, 100B) collides the same way
+    without the insertion code.
+    """
+    ins = getattr(atoms, "ins_code", None)
+    if ins is None:
+        ins = np.full(atoms.array_length(), "", dtype="U1")
+    return [
+        (str(c), int(r), str(i).strip(), str(n))
+        for c, r, i, n in zip(
+            atoms.chain_id, atoms.res_id, ins, atoms.atom_name, strict=True
+        )
+    ]
+
+
+def _match_by_residue(
+    a: struc.AtomArray, b: struc.AtomArray
+) -> tuple[struc.AtomArray, struc.AtomArray]:
+    """Keep only the atoms present in both arrays, in ``b`` order."""
+    key_a: dict[tuple[str, int, str, str], int] = {}
+    for i, key in enumerate(_atom_keys(a)):
+        key_a.setdefault(key, i)
+
+    idx_a: list[int] = []
+    idx_b: list[int] = []
+    for j, key in enumerate(_atom_keys(b)):
+        i = key_a.get(key)
         if i is not None:
             idx_a.append(i)
             idx_b.append(j)

@@ -45,21 +45,39 @@ _STRIP_PATTERNS = (
     r"_(unrelaxed|relaxed)",
 )
 
+# The sample index: AlphaFold3 and Boltz put it last, and it is the only
+# thing distinguishing sibling models of one job.
+_SAMPLE_INDEX = re.compile(r"(\d+)$")
 
-def _job_key(name: str) -> str:
-    """Reduce a file stem to the identifier a model shares with its scores."""
+
+def _job_key(name: str) -> tuple[str, str]:
+    """Split a file stem into ``(job, sample_index)``.
+
+    The job part is shared by a model and its confidence files; the sample
+    index distinguishes sibling models within that job. Both must agree
+    before two files are paired, because ``fold_x_model_0.cif`` and
+    ``fold_x_model_1.cif`` reduce to the same job and would otherwise both
+    match ``fold_x_full_data_0.json`` -- scoring one model with the other's
+    PAE matrix, which looks entirely plausible in the report.
+    """
     key = name.lower()
     for pattern in _STRIP_PATTERNS:
         key = re.sub(pattern, "_", key)
-    # Trailing sample indices differ in position between conventions.
-    key = re.sub(r"[_\-]*\d+$", "", key)
-    return re.sub(r"[_\-]+", "_", key).strip("_")
+    key = re.sub(r"[_\-]+", "_", key).strip("_")
+
+    match = _SAMPLE_INDEX.search(key)
+    if match:
+        sample = match.group(1)
+        key = key[: match.start()].strip("_")
+    else:
+        sample = ""
+    return key, sample
 
 
 def _auto_confidence(structure: Path, explicit: tuple[str, ...]) -> list[Path]:
     """Find the confidence files that belong to this structure.
 
-    Matching is on the shared job key rather than a substring, because no
+    Matching is on the shared job key *and* the sample index, because no
     predictor names a model and its scores identically: AlphaFold3 writes
     ``fold_x_model_0.cif`` beside ``fold_x_full_data_0.json``, where neither
     stem contains the other.
@@ -67,8 +85,8 @@ def _auto_confidence(structure: Path, explicit: tuple[str, ...]) -> list[Path]:
     if explicit:
         return [Path(p) for p in explicit]
 
-    target_key = _job_key(structure.stem)
-    if not target_key:
+    job, sample = _job_key(structure.stem)
+    if not job:
         return []
 
     exact: list[Path] = []
@@ -78,7 +96,9 @@ def _auto_confidence(structure: Path, explicit: tuple[str, ...]) -> list[Path]:
             continue
         if structure.stem in path.stem or path.stem in structure.stem:
             exact.append(path)
-        elif _job_key(path.stem) == target_key:
+            continue
+        other_job, other_sample = _job_key(path.stem)
+        if other_job == job and other_sample == sample:
             loose.append(path)
     return exact or loose
 

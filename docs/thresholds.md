@@ -25,10 +25,21 @@ measurement for the two that could not simply be copied.
 ### On the BindCraft numbers
 
 BindCraft stores pLDDT and PAE on normalised scales. `Average_Binder_pLDDT`
-is 0–1, so its 0.8 is 80 on the 0–100 scale used here. `Average_i_pAE` is
-divided by 31 Å, so its 0.35 is `0.35 × 31 ≈ 10.9 Å`; the default here is
-rounded down to 10.0 Å, which also matches the PAE cutoff ipSAE uses for
-AF3-class output.
+is 0–1, so its 0.8 is 80 on the 0–100 scale used here.
+
+`Average_i_pAE` is the one number whose conversion is **not** verifiable from
+the pinned submodules. BindCraft's filter file gives the threshold as 0.35,
+but the value it compares against comes from ColabDesign
+(`prediction_model.aux["log"]["i_pae"]` in
+`external/bindcraft/functions/colabdesign_utils.py`), and ColabDesign is not
+a submodule here. ColabDesign normalises PAE by 31 Å, the top of AlphaFold2's
+PAE bin range, which would put 0.35 at about 10.9 Å — but that factor cannot
+be confirmed in this repository, so treat it as the reasoning behind the
+default rather than established provenance.
+
+The default is set to 10.0 Å regardless, because that is also the PAE cutoff
+upstream ipSAE uses for AF3-class output, which makes the two consistent. If
+you need a threshold you can defend precisely, set it from your own data.
 
 BindCraft's own `Average_dSASA ≥ 1` is a presence check, not a size filter —
 it rejects a complex with no interface at all. The real buried-area threshold
@@ -41,68 +52,84 @@ measurements BindCraft's thresholds were set against. Copying the numbers
 across would have been wrong in opposite directions: too strict for shape
 complementarity, too lax for hydrophobicity.
 
-So both were measured. Twenty binder:target interfaces were taken from
-experimentally determined complexes distributed with BoltzGen — therapeutic
-Fab complexes (adalimumab, ustekinumab, belimumab, guselkumab, secukinumab,
-tralokinumab), barnase–barstar, and a spread of the harder targets in that
-set. For each, the smaller chain was treated as the binder and the largest as
-the target. These are real, experimentally validated interfaces, so a filter
-that rejects most of them is mis-scaled by construction.
+So both were measured. The measurement is `scripts/calibrate_thresholds.py`,
+kept in the repository so these numbers can be checked rather than taken on
+trust:
 
-Distribution over those 20 interfaces:
+```bash
+python scripts/calibrate_thresholds.py external/boltzgen/example
+```
 
-| Metric | min | p10 | median | p90 | max |
-|---|---|---|---|---|---|
-| Shape complementarity | 0.42 | 0.47 | 0.53 | 0.55 | 0.57 |
-| Buried surface area (Å²) | 422 | 895 | 1545 | 3594 | 3820 |
-| Interface residues | 5 | 8.7 | 14 | 36 | 40 |
-| Interface H-bonds | 0 | 3.8 | 9.5 | 25 | 29 |
-| Buried unsatisfied H-bonds | 0 | 0 | 1 | 5.1 | 9 |
-| Surface hydrophobicity | 0.16 | 0.18 | 0.24 | 0.34 | 0.42 |
+It finds 18 usable binder:target interfaces in the structures distributed
+with BoltzGen — therapeutic Fab complexes (adalimumab, ustekinumab,
+belimumab, guselkumab, secukinumab, tralokinumab), barnase–barstar, and a
+spread of the harder targets in that set. For each, the smallest chain is
+treated as the binder and the largest as the target. These are real,
+experimentally determined interfaces, so a filter that rejects most of them
+is mis-scaled by construction.
+
+| Metric | n | min | p10 | median | p90 | max |
+|---|---|---|---|---|---|---|
+| Shape complementarity | 18 | 0.42 | 0.46 | 0.53 | 0.55 | 0.57 |
+| Buried surface area (Å²) | 18 | 422 | 859 | 1545 | 3600 | 3820 |
+| Interface residues | 18 | 5 | 8.1 | 15 | 36.9 | 40 |
+| Interface H-bonds | 18 | 0 | 3.4 | 8.5 | 23.6 | 26 |
+| Buried unsatisfied H-bonds | 18 | 0 | 0 | 1 | 5.3 | 9 |
+| Surface hydrophobicity | 17 | 0.16 | 0.18 | 0.23 | 0.31 | 0.35 |
+
+Surface hydrophobicity has n = 17 because one structure (`zf.cif`, a zinc
+finger against DNA) has no residue meeting the surface-exposure criterion
+and reports NaN.
+
+What each default threshold does to this set:
+
+| Metric | Default | Rejects |
+|---|---|---|
+| Shape complementarity | ≥ 0.45 | 2 / 18 (11%) |
+| Buried surface area | ≥ 1000 Å² | 3 / 18 (17%) |
+| Interface residues | ≥ 7 | 2 / 18 (11%) |
+| Interface H-bonds | ≥ 3 | 2 / 18 (11%) |
+| Buried unsatisfied H-bonds | ≤ 4 | 3 / 18 (17%) |
+| Surface hydrophobicity | ≤ 0.35 | 0 / 17 (0%) |
 
 Reading across:
 
 - **Interface residues, H-bonds and unsatisfied polars** land on essentially
-  the same scale as BindCraft's Rosetta-derived values. BindCraft's `≥ 7`,
-  `≥ 3` and `≤ 4` sit near the 10th percentile of real interfaces in each
-  case, which is where a filter of this kind belongs. Copied unchanged.
+  the same scale as BindCraft's Rosetta-derived values. Its `≥ 7`, `≥ 3` and
+  `≤ 4` each reject 11–17% of real interfaces here, which is where a filter
+  of this kind belongs. Copied unchanged.
 - **Shape complementarity** does not. Rosetta's `sc` on native interfaces
   clusters at 0.70–0.75; the native implementation here reads 0.42–0.57 on
-  the same kind of interface, a systematic offset of roughly 0.17–0.20 (see
-  `docs/metrics.md` for why — van der Waals rather than solvent-excluded
-  surface). BindCraft's 0.60 would reject every one of the 20. The default
-  is set to **0.45**, just under the 10th percentile; `strict` uses 0.52,
-  the median.
+  the same interfaces, a systematic offset of roughly 0.17–0.20 (see
+  [metrics.md](metrics.md) for why — van der Waals rather than
+  solvent-excluded surface). BindCraft's 0.60 would reject all 18. The
+  default is **0.45**, just under the 10th percentile; `strict` uses 0.52,
+  just under the median of 0.53, which rejects a third of them.
 - **Surface hydrophobicity** needed the definition fixed rather than the
   threshold moved. With Rosetta's `is_apolar` set, which includes glycine and
-  proline, these 20 proteins ran at a median of 0.41 and BindCraft's 0.35
-  would have rejected about three quarters of them. Excluding Gly and Pro
-  brings the median to 0.24 and puts 0.35 at roughly the 90th percentile,
-  which is the behaviour BindCraft's number was chosen to have. So the
-  definition changed and the threshold stayed.
+  proline, these proteins run at a median of 0.40 and BindCraft's 0.35 would
+  reject most of them. Excluding Gly and Pro brings the median to 0.23.
+  Being straight about what that leaves: 0.35 now sits at the **maximum** of
+  this set and rejects none of it, so on real interfaces it is a loose guard
+  rather than a discriminating filter. It is kept because it is the published
+  BindCraft value and because de novo designs are reliably greasier than
+  evolved complexes, which is the population it has to catch. `strict`
+  tightens it to 0.28, near the 70th–80th percentile, which rejects 24%.
 - **Buried surface area** has no inherited value. The default of 1000 Å² sits
-  near the 25th percentile. Note the minimum of 422 Å²: small interfaces do
-  occur among real complexes, so this threshold will reject some genuine
-  binders. That is the intended trade for a gate meant to cut a large
-  generated set down to what is worth expressing.
-
-Reproduce it with any directory of multi-chain structures:
-
-```python
-from foldexa_binder_eval import Complex, compute_interface_geometry
-
-cx = Complex.from_file(path, binder_chain="B", target_chains="A")
-g = compute_interface_geometry(cx)
-print(g.shape_complementarity, g.delta_sasa, g.surface_hydrophobicity)
-```
+  just below the 25th percentile (1075 Å²). Note the minimum of 422 Å²: small
+  interfaces do occur among real complexes, so this threshold does reject
+  some genuine binders. That is the intended trade for a gate meant to cut a
+  large generated set down to what is worth expressing. `strict` at 1600 Å²
+  rejects 56% of real interfaces, which is appropriate for lead selection and
+  would be indefensible for triage.
 
 ## Caveats on the calibration
 
 Worth stating plainly:
 
-- **n = 20** is small, and the set is antibody-heavy because that is what was
-  available offline. The percentiles should be read as order-of-magnitude
-  guidance, not as tight bounds.
+- **n = 18** is small, and the set is antibody-heavy because that is what the
+  pinned submodules happen to carry. The percentiles should be read as
+  order-of-magnitude guidance, not as tight bounds.
 - **Crystal interfaces are not designed interfaces.** De novo binders tend
   toward flatter, more hydrophobic interfaces than evolved ones. If anything
   that argues for tightening shape complementarity relative to these numbers,

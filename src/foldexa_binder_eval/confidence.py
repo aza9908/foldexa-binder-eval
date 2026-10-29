@@ -26,7 +26,18 @@ from pathlib import Path
 
 import numpy as np
 
-__all__ = ["ConfidenceData", "load_confidence"]
+__all__ = ["ConfidenceData", "load_confidence", "CANONICAL_RESIDUES"]
+
+# Residues a predictor tokenises as a single token. Anything else -- a
+# modified residue, a ligand, an ion -- gets one token per atom, which is
+# what :meth:`ConfidenceData.align_to` has to account for.
+CANONICAL_RESIDUES = frozenset(
+    {
+        "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS", "ILE",
+        "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP", "TYR", "VAL",
+        "A", "C", "G", "U", "DA", "DC", "DG", "DT", "N",
+    }
+)
 
 
 @dataclass
@@ -88,8 +99,22 @@ class ConfidenceData:
         modified residues as one token *per atom*, so a PAE matrix is
         routinely larger than the polymer residue count and the two are not
         in the same order. When the file carries ``token_chain_ids`` and
-        ``token_res_ids`` the mapping is exact; otherwise a 1:1 correspondence
-        is assumed and verified by length.
+        ``token_res_ids`` the mapping is derived from them; otherwise a 1:1
+        correspondence is assumed and verified by length.
+
+        The token arrays carry no insertion codes and no atom names, so a
+        ``(chain, res_id)`` lookup is not enough to place them:
+
+        * Antibody numbering repeats a residue id across insertion codes
+          (100, 100A, 100B), which share one key but are three residues with
+          one token each.
+        * A modified residue such as TPO or SEP is tokenised per atom, so one
+          residue holds several tokens under a single key, and the right one
+          is the token for its CA -- the atom the score is attributed to.
+
+        Both are resolved by walking tokens and residues together in file
+        order and consuming, for each residue, as many tokens as that residue
+        is expected to produce.
         """
         n_res = cx.n_residues
         if self.pae is None and self.plddt is None:
@@ -99,21 +124,51 @@ class ConfidenceData:
             self.check_against(n_res)
             return self
 
-        lookup: dict[tuple[str, int], int] = {}
-        for i, (chain, res) in enumerate(
-            zip(self.chain_ids, self.res_ids, strict=True)
-        ):
-            lookup.setdefault((str(chain), int(res)), i)
+        token_keys = [
+            (str(c), int(r))
+            for c, r in zip(self.chain_ids, self.res_ids, strict=True)
+        ]
+        n_tokens = len(token_keys)
+
+        atom_names = cx.atoms.atom_name
+        res_of_atom = cx.res_index_of_atom
 
         index = np.empty(n_res, dtype=int)
         missing: list[str] = []
+        cursor = 0
+
         for residue in cx.residues:
-            token = lookup.get((residue.chain_id, residue.res_id))
-            if token is None:
+            key = (residue.chain_id, residue.res_id)
+
+            # Skip tokens for anything not in the loaded structure: ions,
+            # free ligands, chains that were filtered out.
+            while cursor < n_tokens and token_keys[cursor] != key:
+                cursor += 1
+            if cursor >= n_tokens:
                 missing.append(residue.label)
                 index[residue.index] = -1
+                continue
+
+            run_end = cursor
+            while run_end < n_tokens and token_keys[run_end] == key:
+                run_end += 1
+            available = run_end - cursor
+
+            own_atoms = np.flatnonzero(res_of_atom == residue.index)
+            expected = (
+                1 if residue.res_name.upper() in CANONICAL_RESIDUES else len(own_atoms)
+            )
+            take = max(1, min(expected, available))
+
+            if take > 1:
+                # Per-atom tokens: attribute the residue to its CA, falling
+                # back to the first token when there is no CA.
+                names = [str(atom_names[i]) for i in own_atoms]
+                offset = names.index("CA") if "CA" in names else 0
+                index[residue.index] = cursor + min(offset, take - 1)
             else:
-                index[residue.index] = token
+                index[residue.index] = cursor
+            cursor += take
 
         if missing:
             preview = ", ".join(missing[:6]) + (" ..." if len(missing) > 6 else "")
@@ -121,6 +176,14 @@ class ConfidenceData:
                 f"{len(missing)} residue(s) of the structure have no matching "
                 f"token in the confidence file ({preview}). The structure and "
                 "the confidence output are probably from different runs. "
+                f"Sources: {', '.join(self.source) or 'n/a'}"
+            )
+
+        if len(set(index.tolist())) != n_res:
+            raise ValueError(
+                "Token alignment mapped two residues onto the same PAE row, "
+                "so the confidence file cannot be matched to this structure "
+                "reliably. Check that both come from the same prediction. "
                 f"Sources: {', '.join(self.source) or 'n/a'}"
             )
 
@@ -208,8 +271,25 @@ def _read_json(path: Path) -> ConfidenceData:
             r2 = np.asarray(payload["residue2"], dtype=int) - 1
             dist = np.asarray(payload["distance"], dtype=float)
             n = int(max(r1.max(), r2.max())) + 1
-            mat = np.zeros((n, n))
+
+            # Start from NaN, not zero. Some writers of this format emit only
+            # one triangle, and an unfilled cell left at 0.0 would read as
+            # maximal confidence -- fabricating a perfect interface rather
+            # than reporting that the data is incomplete.
+            mat = np.full((n, n), np.nan)
             mat[r1, r2] = dist
+
+            # Mirror whatever the file did supply, then insist the result is
+            # complete.
+            mat = np.where(np.isnan(mat), mat.T, mat)
+            if np.isnan(mat).any():
+                n_missing = int(np.isnan(mat).sum())
+                raise ValueError(
+                    f"{path} supplies a sparse PAE matrix: {n_missing} of "
+                    f"{n * n} entries are absent even after mirroring. "
+                    "A partially filled matrix cannot be scored, because "
+                    "missing entries would read as zero error."
+                )
             data.pae = mat
 
     # --- token identity (AF3 / RF3 / Boltz) -----------------------------

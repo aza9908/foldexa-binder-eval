@@ -2,8 +2,12 @@
 
 :mod:`foldexa_binder_eval.ipsae` reimplements the scoring natively, which is
 what the pipeline uses. This adapter exists so the native numbers can be
-checked against the reference implementation -- ``tests/test_ipsae.py`` runs
-both on the same model and asserts they agree.
+checked against the reference implementation on your own models.
+
+Note that ``tests/test_ipsae.py`` does not call this adapter: it compares
+against the score files committed in the submodule, so the suite needs no
+subprocess and no upstream dependencies. Running the script itself, through
+:func:`run_ipsae`, is a manual cross-check.
 
 The upstream script is pinned at ``external/ipsae``. Clone it with
 ``scripts/setup_upstream.sh``.

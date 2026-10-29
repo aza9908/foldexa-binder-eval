@@ -7,9 +7,11 @@ and vectorised so a whole design campaign can be scored in-process without
 shelling out per model.
 
 The upstream script remains the reference. ``external/ipsae`` pins it as a
-submodule and :mod:`foldexa_binder_eval.adapters.ipsae_cli` parses its output,
-so results can be cross-checked -- ``tests/test_ipsae.py`` asserts the two
-agree.
+submodule, and ``tests/test_ipsae.py`` checks this implementation against the
+score files committed there, which that script produced for its own example
+models. The test parses those committed files rather than invoking the script;
+:mod:`foldexa_binder_eval.adapters.ipsae_cli` can run it directly when you
+want to compare on your own models.
 
 Why ipSAE rather than raw ipTM: ipTM averages predicted alignment error over
 *every* inter-chain residue pair, so a small, well-predicted interface on a
@@ -251,10 +253,22 @@ def compute_interface_scores(
         x = mean_plddt * math.log10(n_contacts)
         pdockq = 0.724 / (1.0 + math.exp(-0.052 * (x - 152.611))) + 0.018
 
-        pae_contacts = pae[contact]
-        mean_ptm = float(ptm_func(pae_contacts, PDOCKQ2_D0).mean())
-        x2 = mean_plddt * mean_ptm
-        pdockq2 = 1.31 / (1.0 + math.exp(-0.075 * (x2 - 84.733))) + 0.005
+        # pDockQ2 averages the pTM kernel over contacting pairs, and the PAE
+        # matrix is not symmetric, so the two chain orders give different
+        # values. Upstream reports the larger of the two for a chain pair;
+        # doing the same keeps this comparable with its output instead of
+        # silently depending on which chain was named the binder.
+        def _directional_pdockq2(block_mask: np.ndarray) -> float:
+            if not block_mask.any():
+                return 0.0
+            mean_ptm = float(ptm_func(pae[block_mask], PDOCKQ2_D0).mean())
+            x2 = mean_plddt * mean_ptm
+            return 1.31 / (1.0 + math.exp(-0.075 * (x2 - 84.733))) + 0.005
+
+        pdockq2 = max(
+            _directional_pdockq2(contact),
+            _directional_pdockq2(contact.T),
+        )
     else:
         pdockq = 0.0
         pdockq2 = 0.0

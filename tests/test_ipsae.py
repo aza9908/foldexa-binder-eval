@@ -202,14 +202,22 @@ def test_matches_upstream_reference(
     )
     expected = _reference_row(IPSAE_EXAMPLE / reference, binder, target)
 
-    # Tolerance 1e-4. Every structural quantity the score is built from --
-    # n0chn, n0dom, n0res, d0res, and the set of residue pairs clearing the
-    # cutoff -- agrees with the reference exactly; what is left is a
-    # floating-point difference of a few times 1e-5 in the final mean. The
-    # AF2 case agrees to the full six printed decimals.
-    assert scores.ipsae == pytest.approx(expected["ipSAE"], abs=1e-4)
-    assert scores.ipsae_d0chn == pytest.approx(expected["ipSAE_d0chn"], abs=1e-4)
-    assert scores.ipsae_d0dom == pytest.approx(expected["ipSAE_d0dom"], abs=1e-4)
-    assert scores.iptm_d0chn == pytest.approx(expected["ipTM_d0chn"], abs=1e-4)
+    # Tolerance 1e-6, which is the precision the reference file prints to.
+    # Every structural quantity the score is built from -- n0chn, n0dom,
+    # n0res, d0res, the selected token per residue, and the set of residue
+    # pairs clearing the cutoff -- agrees with the reference exactly, so what
+    # is left is genuine floating-point noise.
+    #
+    # A looser tolerance here previously masked a real defect: token
+    # selection for modified residues (TPO) picked the first atom of the
+    # residue rather than its CA, shifting those rows of the PAE matrix by
+    # up to 1 A and the final score by 3e-5. See
+    # tests/test_regressions.py::test_modified_residue_uses_its_ca_token.
+    assert scores.ipsae == pytest.approx(expected["ipSAE"], abs=1e-6)
+    assert scores.ipsae_d0chn == pytest.approx(expected["ipSAE_d0chn"], abs=1e-6)
+    assert scores.ipsae_d0dom == pytest.approx(expected["ipSAE_d0dom"], abs=1e-6)
+    assert scores.iptm_d0chn == pytest.approx(expected["ipTM_d0chn"], abs=1e-6)
     assert scores.pdockq == pytest.approx(expected["pDockQ"], abs=1e-3)
+    # pDockQ2 and LIS are printed to four decimals upstream.
+    assert scores.pdockq2 == pytest.approx(expected["pDockQ2"], abs=1e-3)
     assert scores.lis == pytest.approx(expected["LIS"], abs=1e-3)

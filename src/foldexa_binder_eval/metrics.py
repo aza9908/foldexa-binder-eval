@@ -16,9 +16,11 @@ threshold passes. The twelve sit in three tiers:
     that are real but sticky, aggregation-prone, or conformationally
     unstable.
 
-Thresholds ship in ``config/``; the defaults trace to BindCraft's
+Threshold profiles ship in ``foldexa_binder_eval/profiles/`` and are
+overridable from a ``config/`` directory; the defaults trace to BindCraft's
 ``settings_filters/default_filters.json``, BoltzGen's ``Filter`` defaults, and
-the ipSAE preprint. See ``docs/thresholds.md`` for the per-metric argument.
+the ipSAE preprint. See ``docs/thresholds.md`` for the per-metric argument,
+including the two thresholds that had to be recalibrated rather than copied.
 """
 
 from __future__ import annotations
@@ -347,10 +349,27 @@ def evaluate_candidate(
 
     # ---------------- confidence tier ----------------
     def _scaled(values: np.ndarray) -> np.ndarray | None:
+        """Put a B-factor column on the 0-100 pLDDT scale, or reject it.
+
+        A predictor writes pLDDT here, on 0-1 (AF3, RF3, Boltz mmCIF) or
+        0-100 (AF2 PDB). A crystal structure writes real B-factors, and a
+        minimised or hand-built model often writes a constant 1.00. Rescaling
+        a constant 1.00 by 100 would report a perfect pLDDT of 100 for a file
+        that carries no confidence information at all, so a column that does
+        not vary is refused rather than guessed at.
+        """
         finite = values[np.isfinite(values)]
-        if not finite.size:
+        if finite.size < 2:
             return None
-        return values * 100.0 if finite.max() <= 1.0 + 1e-9 else values
+        spread = float(finite.max() - finite.min())
+        if spread < 1e-6:
+            return None
+        if finite.max() <= 1.0 + 1e-9:
+            return values * 100.0
+        if finite.max() > 100.0 + 1e-6:
+            # Above the pLDDT range: these are crystallographic B-factors.
+            return None
+        return values
 
     plddt_per_res = None
     plddt_representative = None
@@ -364,6 +383,11 @@ def evaluate_candidate(
         plddt_representative = _scaled(cx.representative_bfactor())
         if plddt_per_res is not None:
             extras["plddt_source"] = "structure B-factor column"
+        else:
+            extras["plddt_source"] = (
+                "unavailable: no confidence file, and the B-factor column "
+                "does not look like pLDDT"
+            )
 
     if plddt_per_res is not None and plddt_per_res.shape[0] == cx.n_residues:
         binder_vals = plddt_per_res[cx.binder_residue_mask]
