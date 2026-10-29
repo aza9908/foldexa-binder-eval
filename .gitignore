@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.venv/
+venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Tool output
+*.csv
+*.html
+!docs/*.html
+binder_eval.*
+results/
+
+# Scratch
+*.pdb.gz
+*.cif.gz
+.DS_Store

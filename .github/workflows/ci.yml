@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Only the ipSAE submodule is needed, and it is small. The
+          # reference regression in tests/test_ipsae.py skips without it, so
+          # fetching it is what makes CI meaningful rather than optional.
+          submodules: false
+
+      - name: Fetch ipSAE reference data
+        run: |
+          git submodule update --init --depth 1 -- external/ipsae
+          git submodule update --init --depth 1 -- external/bindcraft
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check src tests
+
+      - name: Test
+        run: pytest -v --cov=foldexa_binder_eval --cov-report=term-missing
+
+      - name: Confirm the reference regression actually ran
+        run: |
+          # A silent skip here would mean the upstream comparison is not
+          # being exercised, which is the one test that matters most.
+          pytest -q -k upstream -rs | tee result.txt
+          if grep -qi "skipped" result.txt; then
+            echo "::error::ipSAE reference tests were skipped; submodule missing"
+            exit 1
+          fi
+
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e .
+      - name: Smoke-test the command line interface
+        run: |
+          foldexa-binder-eval --version
+          foldexa-binder-eval profiles
+          foldexa-binder-eval metrics -p strict

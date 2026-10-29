@@ -1,0 +1,46 @@
+name: default
+description: >
+  General de novo protein binder against a protein target. Calibrated for
+  mini-binders and small scaffolds in the 50-120 residue range.
+
+  Provenance of each number: confidence thresholds follow BindCraft's default
+  filter set; ipSAE and pDockQ follow their source publications; the contact
+  and H-bond counts follow BindCraft and were confirmed to sit on the same
+  scale as this package's native implementations. Shape complementarity is
+  the exception -- the native van der Waals surface implementation reads
+  roughly 0.17-0.20 lower than Rosetta's `sc`, so its threshold is calibrated
+  against 20 experimentally determined complexes rather than copied from
+  BindCraft's 0.60. See docs/thresholds.md for that measurement.
+
+# PAE below which an inter-chain residue pair counts toward ipSAE.
+# 10 A is the upstream default for AF3/Boltz/RF3 output; use 15 for AF2.
+pae_cutoff: 10.0
+dist_cutoff: 10.0
+
+# "target": superpose on the target, then measure the binder -- does the
+# binder land in the same pose? "binder": superpose binder on binder -- does
+# the sequence fold back to its own design?
+rmsd_align_on: target
+
+# What to do when a metric cannot be computed (e.g. no refold supplied).
+# "fail" refuses to call a candidate passing on incomplete evidence.
+missing_policy: fail
+
+thresholds:
+  # --- confidence ---
+  binder_plddt: 80.0          # BindCraft Average_Binder_pLDDT >= 0.8
+  complex_iptm: 0.50          # BindCraft Average_i_pTM >= 0.5
+  ipsae: 0.50                 # Dunbrack 2025, interface-restricted pTM
+  pae_interaction: 10.0       # BindCraft Average_i_pAE 0.35 x 31 A ~ 10.9 A
+  pdockq: 0.23                # Bryant 2022 acceptable-model threshold
+
+  # --- interface ---
+  delta_sasa: 1000.0          # A^2 buried, both sides; real interfaces p25
+  n_interface_residues: 7     # BindCraft Average_n_InterfaceResidues
+  n_interface_hbonds: 3       # BindCraft Average_n_InterfaceHbonds
+  n_unsat_hbonds: 4           # BindCraft Average_n_InterfaceUnsatHbonds
+  shape_complementarity: 0.45 # native scale; real interfaces p10 = 0.47
+
+  # --- developability ---
+  surface_hydrophobicity: 0.35  # BindCraft value; real proteins p90 = 0.34
+  binder_rmsd: 2.5              # BoltzGen refolding_rmsd_threshold

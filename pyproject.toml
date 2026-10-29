@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "foldexa-binder-eval"
+version = "0.1.0"
+description = "Twelve-metric acceptance testing for designed protein binders"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Foldexa.bio" }]
+keywords = [
+    "protein design",
+    "binder design",
+    "ipSAE",
+    "BoltzGen",
+    "RoseTTAFold",
+    "structural biology",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pandas>=2.0",
+    "biotite>=0.40",
+    "pyyaml>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "pytest-cov>=4.1", "ruff>=0.5"]
+
+[project.urls]
+Homepage = "https://github.com/aza9908/foldexa-binder-eval"
+Issues = "https://github.com/aza9908/foldexa-binder-eval/issues"
+
+[project.scripts]
+foldexa-binder-eval = "foldexa_binder_eval.cli:main"
+fbe = "foldexa_binder_eval.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+foldexa_binder_eval = ["profiles/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]

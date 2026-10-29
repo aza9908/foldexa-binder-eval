@@ -1,0 +1,23 @@
+extends: default
+name: strict
+description: >
+  Lead-selection gate. Use when picking the handful of designs that will
+  actually be ordered and expressed, not for triaging a campaign. Every
+  threshold here sits where the de novo binder literature puts experimentally
+  confirmed binders rather than where it puts plausible models.
+
+thresholds:
+  binder_plddt: 85.0
+  complex_iptm: 0.70
+  ipsae: 0.65
+  pae_interaction: 7.0
+  pdockq: 0.40
+
+  delta_sasa: 1600.0        # ~p60 of real interfaces
+  n_interface_residues: 10
+  n_interface_hbonds: 5
+  n_unsat_hbonds: 2
+  shape_complementarity: 0.52   # native scale; median of real interfaces
+
+  surface_hydrophobicity: 0.28  # native scale; ~p70 of real proteins
+  binder_rmsd: 1.5

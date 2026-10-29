@@ -1,0 +1,12 @@
+[submodule "external/ipsae"]
+	path = external/ipsae
+	url = https://github.com/DunbrackLab/IPSAE.git
+[submodule "external/boltzgen"]
+	path = external/boltzgen
+	url = https://github.com/HannesStark/boltzgen.git
+[submodule "external/bindcraft"]
+	path = external/bindcraft
+	url = https://github.com/martinpacesa/BindCraft.git
+[submodule "external/rf3-foundry"]
+	path = external/rf3-foundry
+	url = https://github.com/RosettaCommons/foundry.git

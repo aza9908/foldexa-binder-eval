@@ -1,0 +1,26 @@
+extends: default
+name: screen
+description: >
+  First-pass triage over a large generated set, before any expensive
+  refolding or Rosetta work. Only the cheap confidence and contact metrics
+  gate; everything else is computed and reported but not used to reject, so
+  nothing is thrown away on evidence that has not been gathered yet.
+  missing_policy is "skip" because the refold does not exist at this stage.
+
+missing_policy: skip
+
+thresholds:
+  binder_plddt: 70.0
+  complex_iptm: 0.40
+  ipsae: 0.35
+  pae_interaction: 15.0
+  pdockq: 0.15
+
+  delta_sasa: 600.0
+  n_interface_residues: 5
+  n_interface_hbonds: 1
+  n_unsat_hbonds: null
+  shape_complementarity: null
+
+  surface_hydrophobicity: null
+  binder_rmsd: null

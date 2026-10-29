@@ -1,0 +1,26 @@
+extends: default
+name: nanobody
+description: >
+  VHH / nanobody and antibody-fragment binders. Three differences from the
+  default profile, each with a reason:
+
+  1. The paratope is three CDR loops rather than a designed interface face,
+     so shape complementarity and buried area run lower than for a de novo
+     mini-binder even when the binder is real.
+  2. The framework is a fixed, well-behaved scaffold. Refold RMSD over the
+     whole domain is dominated by framework agreement and says little about
+     the design, so BoltzGen disables design-folding filtering for nanobodies
+     by default. Here it is kept but loosened, and switched to binder-on-binder
+     alignment so it reports fold self-consistency rather than pose.
+  3. Surface hydrophobicity is tightened. Nanobody developability failures are
+     overwhelmingly aggregation driven, and the former-VH-interface face is a
+     known sticky patch.
+
+rmsd_align_on: binder
+
+thresholds:
+  delta_sasa: 800.0             # CDR paratopes bury less than designed faces
+  n_interface_residues: 6
+  shape_complementarity: 0.42   # native scale
+  binder_rmsd: 3.0
+  surface_hydrophobicity: 0.32  # native scale; tightened, VHH aggregation risk
